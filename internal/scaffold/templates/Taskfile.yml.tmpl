@@ -1,0 +1,42 @@
+version: '3'
+
+tasks:
+  install-uv:
+    desc: Install uv package manager
+    cmd: curl -LsSf https://astral.sh/uv/install.sh | sh
+
+  install-task:
+    desc: Install Task runner
+    cmd: brew install go-task
+
+  onboard:
+    desc: Install tools, create venv, and install dependencies
+    cmds:
+      - task: install-uv
+      - task: install-task
+      - task: env
+      - task: install
+
+  env:
+    desc: Create virtual environment
+    cmd: uv venv
+
+  install:
+    desc: Install dependencies
+    cmd: uv sync
+
+  lint:
+    desc: Run ruff linter
+    cmd: uv run ruff check src tests
+
+  format:
+    desc: Format code with ruff
+    cmd: uv run ruff format src tests
+
+  test:
+    desc: Run tests
+    cmd: uv run pytest tests/ -v
+
+  check:
+    desc: Run lint and tests
+    deps: [lint, test]

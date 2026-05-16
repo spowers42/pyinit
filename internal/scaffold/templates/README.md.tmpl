@@ -1,0 +1,29 @@
+# {{ .ProjectName }}
+
+{{ .Description }}
+
+## Getting started
+
+Install [Task](https://taskfile.dev/#/installation) if you don't have it, then run:
+
+```bash
+task onboard
+```
+
+This installs `uv` and `task` (if missing), creates the virtual environment, and installs all dependencies.
+
+If you already have `uv` and `task` installed:
+
+```bash
+task env      # create virtual environment
+task install  # install dependencies
+```
+
+## Development
+
+```bash
+task lint      # run ruff linter
+task format    # format code with ruff
+task test      # run pytest
+task check     # lint + test
+```
