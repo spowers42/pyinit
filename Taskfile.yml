@@ -1,0 +1,26 @@
+version: '3'
+
+tasks:
+  install-golangci-lint:
+    desc: Install golangci-lint
+    cmd: brew install golangci-lint
+
+  build:
+    desc: Build the pyinit binary
+    cmd: go build -o pyinit .
+
+  lint:
+    desc: Run golangci-lint
+    cmd: golangci-lint run ./...
+
+  test:
+    desc: Run tests
+    cmd: go test ./...
+
+  check:
+    desc: Lint and test
+    deps: [lint, test]
+
+  clean:
+    desc: Remove built binary
+    cmd: rm -f pyinit
