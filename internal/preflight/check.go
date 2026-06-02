@@ -12,7 +12,8 @@ import (
 type tool struct {
 	name       string
 	brewPkg    string
-	installCmd []string // fallback if brew not available
+	installCmd []string // fallback if brew not available (run with sudo)
+	docsURL    string
 }
 
 var required = []tool{
@@ -22,6 +23,7 @@ var required = []tool{
 		installCmd: []string{
 			"sh", "-c", "curl -LsSf https://astral.sh/uv/install.sh | sh",
 		},
+		docsURL: "https://docs.astral.sh/uv/getting-started/installation/",
 	},
 	{
 		name:    "task",
@@ -29,6 +31,7 @@ var required = []tool{
 		installCmd: []string{
 			"sh", "-c", `sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin`,
 		},
+		docsURL: "https://taskfile.dev/installation/",
 	},
 }
 
@@ -50,11 +53,26 @@ func Check() error {
 	}
 	fmt.Println()
 
+	hasBrew := false
+	if runtime.GOOS == "darwin" {
+		if _, err := exec.LookPath("brew"); err == nil {
+			hasBrew = true
+		}
+	}
+
+	// Non-brew installs write to system paths and require sudo.
+	confirmTitle := "Required tools are missing. Install them now?"
+	if !hasBrew {
+		fmt.Println("  ⚠️  Installing these tools requires sudo access.")
+		fmt.Println()
+		confirmTitle = "Required tools are missing. Install them now? (requires sudo)"
+	}
+
 	var install bool
 	prompt := huh.NewForm(
 		huh.NewGroup(
 			huh.NewConfirm().
-				Title("Required tools are missing. Install them now?").
+				Title(confirmTitle).
 				Affirmative("Yes, install").
 				Negative("No, exit").
 				Value(&install),
@@ -65,14 +83,12 @@ func Check() error {
 	}
 
 	if !install {
-		return fmt.Errorf("required tools not installed")
-	}
-
-	hasBrew := false
-	if runtime.GOOS == "darwin" {
-		if _, err := exec.LookPath("brew"); err == nil {
-			hasBrew = true
+		fmt.Println("\nTo install manually, visit:")
+		for _, t := range missing {
+			fmt.Printf("  • %s: %s\n", t.name, t.docsURL)
 		}
+		fmt.Println()
+		return fmt.Errorf("required tools not installed")
 	}
 
 	for _, t := range missing {
@@ -102,7 +118,9 @@ func installTool(t tool, hasBrew bool) error {
 	if hasBrew {
 		cmd = exec.Command("brew", "install", t.brewPkg)
 	} else {
-		cmd = exec.Command(t.installCmd[0], t.installCmd[1:]...)
+		// Non-brew installs write to system paths (e.g. /usr/local/bin) and require sudo.
+		sudoArgs := append([]string{"sudo"}, t.installCmd...)
+		cmd = exec.Command(sudoArgs[0], sudoArgs[1:]...)
 	}
 
 	cmd.Stdout = os.Stdout
