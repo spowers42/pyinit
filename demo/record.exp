@@ -1,0 +1,70 @@
+#!/usr/bin/expect -f
+
+set timeout 30
+
+# Set terminal dimensions before spawning so the TUI renders correctly
+stty rows 30 cols 100
+
+# Slow down typing to look natural
+set send_human {0.05 0.1 1 0.01 0.3}
+
+spawn /Users/scott/Development/pyinit/pyinit
+
+# --- Group 1: Project name + Description ---
+
+# Wait for project name prompt
+expect "Project name"
+sleep 0.5
+send -h "my-awesome-lib"
+sleep 0.4
+
+# Move to description field
+send "\t"
+sleep 0.3
+send -h "A Python library for doing awesome things"
+sleep 0.4
+
+# Submit group
+send "\r"
+sleep 0.5
+
+# --- Group 2: Author name + email ---
+
+expect "Author name"
+sleep 0.4
+send -h "Scott Powers"
+sleep 0.3
+
+send "\t"
+sleep 0.3
+send -h "scott@example.com"
+sleep 0.4
+
+send "\r"
+sleep 0.5
+
+# --- Group 3: Python version + Output dir ---
+
+expect "Python version"
+sleep 0.4
+# Accept default 3.12 by tabbing past it
+send "\t"
+sleep 0.3
+
+# Output dir — use /tmp for the demo
+expect "Output directory"
+sleep 0.3
+# Clear the default and type /tmp
+send "\005"
+sleep 0.1
+send -h "/tmp"
+sleep 0.4
+
+send "\r"
+sleep 0.5
+
+# Wait for scaffold to finish
+expect "Done!"
+sleep 1.5
+
+expect eof
