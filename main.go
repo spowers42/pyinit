@@ -10,8 +10,11 @@ import (
 	"github.com/scottp/pyinit/internal/tui"
 )
 
+// version is set at build time via -ldflags "-X main.version=<tag>".
+var version = "dev"
+
 func main() {
-	fmt.Println("pyinit — bootstrap a new Python project")
+	fmt.Printf("pyinit %s — bootstrap a new Python project\n", version)
 	fmt.Println()
 
 	if err := preflight.Check(); err != nil {
