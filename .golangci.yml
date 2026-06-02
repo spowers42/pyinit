@@ -8,6 +8,11 @@ linters:
     - staticcheck
     - unused
     - misspell
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
 
 formatters:
   enable:
@@ -18,9 +23,3 @@ formatters:
     goimports:
       local-prefixes:
         - github.com/scottp/pyinit
-
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - errcheck
