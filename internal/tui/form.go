@@ -62,3 +62,5 @@ func Run() (config.ProjectConfig, error) {
 
 	return config.New(input)
 }
+
+// demo-sync retest: comment only
