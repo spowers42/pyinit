@@ -64,3 +64,4 @@ func Run() (config.ProjectConfig, error) {
 }
 
 // demo-sync retest: comment only
+var _ = "Project name"
