@@ -5,7 +5,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 
-	"github.com/scottp/pyinit/internal/config"
+	"github.com/spowers42/pyinit/internal/config"
 )
 
 func Run() (config.ProjectConfig, error) {

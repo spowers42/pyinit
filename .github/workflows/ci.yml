@@ -13,6 +13,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -20,11 +22,21 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Install Task
+        uses: go-task/setup-task@v2
+
+      - name: Verify Task
+        run: task --version
+
       - name: Build
-        run: go build ./...
+        run: task build
 
       - name: Test
-        run: go test ./...
+        run: task test
+
+      - name: Demo in sync with TUI
+        if: github.event_name == 'pull_request'
+        run: scripts/check-demo-sync.sh origin/${{ github.base_ref }}
 
       - name: Lint
         uses: golangci/golangci-lint-action@v7

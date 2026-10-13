@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"github.com/scottp/pyinit/internal/config"
-	"github.com/scottp/pyinit/internal/runner"
+	"github.com/spowers42/pyinit/internal/config"
+	"github.com/spowers42/pyinit/internal/runner"
 )
 
 //go:embed templates/*

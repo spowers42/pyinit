@@ -5,10 +5,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/scottp/pyinit/internal/preflight"
-	"github.com/scottp/pyinit/internal/runner"
-	"github.com/scottp/pyinit/internal/scaffold"
-	"github.com/scottp/pyinit/internal/tui"
+	"github.com/spowers42/pyinit/internal/preflight"
+	"github.com/spowers42/pyinit/internal/runner"
+	"github.com/spowers42/pyinit/internal/scaffold"
+	"github.com/spowers42/pyinit/internal/tui"
 )
 
 // version is set at build time via -ldflags "-X main.version=<tag>".
