@@ -10,11 +10,6 @@ import (
 	"github.com/spowers42/pyinit/internal/runner"
 )
 
-const (
-	sudoPrompt  = "Required tools are missing. Install them now? (requires sudo)"
-	plainPrompt = "Required tools are missing. Install them now?"
-)
-
 type fakeEnv struct {
 	onPath  map[string]bool
 	goos    string
@@ -25,13 +20,13 @@ type fakeEnv struct {
 	prompts []string
 }
 
-func (f *fakeEnv) LookPath(n string) bool   { return f.onPath[n] }
-func (f *fakeEnv) OS() string               { return f.goos }
-func (f *fakeEnv) FileExists(p string) bool { return f.files[p] }
-func (f *fakeEnv) Runner() runner.Runner    { return &f.run }
-func (f *fakeEnv) Out() io.Writer           { return &f.out }
-func (f *fakeEnv) Confirm(t string) (bool, error) {
-	f.prompts = append(f.prompts, t)
+func (f *fakeEnv) LookPath(name string) bool   { return f.onPath[name] }
+func (f *fakeEnv) OS() string                  { return f.goos }
+func (f *fakeEnv) FileExists(path string) bool { return f.files[path] }
+func (f *fakeEnv) Runner() runner.Runner       { return &f.run }
+func (f *fakeEnv) Out() io.Writer              { return &f.out }
+func (f *fakeEnv) Confirm(title string) (bool, error) {
+	f.prompts = append(f.prompts, title)
 	return f.confirm, nil
 }
 
@@ -87,10 +82,10 @@ func TestCheckDecline(t *testing.T) {
 	e := newEnv("linux")
 	e.confirm = false
 	err := Check(e)
-	if err == nil || err.Error() != "required tools not installed" {
+	if !errors.Is(err, ErrNotInstalled) {
 		t.Fatalf("err = %v", err)
 	}
-	assertPrompts(t, e, sudoPrompt)
+	assertPrompts(t, e, installPromptSudo)
 	assertCalls(t, e)
 	for _, link := range []string{
 		"uv: https://docs.astral.sh/uv/getting-started/installation/",
@@ -108,7 +103,7 @@ func TestCheckBrewInstall(t *testing.T) {
 	if err := Check(e); err != nil {
 		t.Fatal(err)
 	}
-	assertPrompts(t, e, plainPrompt)
+	assertPrompts(t, e, installPrompt)
 	assertCalls(t, e, "brew install uv", "brew install go-task")
 	if strings.Contains(e.out.String(), "sudo") {
 		t.Fatal("brew path must not mention sudo")
@@ -121,7 +116,7 @@ func TestCheckSudoInstall(t *testing.T) {
 	if err := Check(e); err != nil {
 		t.Fatal(err)
 	}
-	assertPrompts(t, e, sudoPrompt)
+	assertPrompts(t, e, installPromptSudo)
 	assertCalls(t, e,
 		"sudo sh -c curl -LsSf https://astral.sh/uv/install.sh | sh",
 		`sudo sh -c sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin`,
@@ -137,7 +132,7 @@ func TestCheckDarwinWithoutBrewUsesSudo(t *testing.T) {
 	if err := Check(e); err != nil {
 		t.Fatal(err)
 	}
-	assertPrompts(t, e, sudoPrompt)
+	assertPrompts(t, e, installPromptSudo)
 	assertCalls(t, e, "sudo sh -c curl -LsSf https://astral.sh/uv/install.sh | sh")
 }
 
@@ -157,6 +152,8 @@ func TestCheckRecheckNotOnPath(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "uv was installed but is not on PATH") {
 		t.Fatalf("err = %v", err)
 	}
+	assertPrompts(t, e, installPromptSudo)
+	assertCalls(t, e, "sudo sh -c curl -LsSf https://astral.sh/uv/install.sh | sh")
 }
 
 func TestCheckRecheckCommonPathsFallback(t *testing.T) {
@@ -165,4 +162,6 @@ func TestCheckRecheckCommonPathsFallback(t *testing.T) {
 	if err := Check(e); err != nil {
 		t.Fatal(err)
 	}
+	assertPrompts(t, e, installPromptSudo)
+	assertCalls(t, e, "sudo sh -c curl -LsSf https://astral.sh/uv/install.sh | sh")
 }

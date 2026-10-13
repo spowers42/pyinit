@@ -2,6 +2,7 @@
 package preflight
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -11,6 +12,15 @@ import (
 	"github.com/charmbracelet/huh"
 
 	"github.com/spowers42/pyinit/internal/runner"
+)
+
+// ErrNotInstalled is returned when the user declines to install missing tools.
+var ErrNotInstalled = errors.New("required tools not installed")
+
+// Install prompt titles; the sudo variant is shown when installs fall back to sudo.
+const (
+	installPrompt     = "Required tools are missing. Install them now?"
+	installPromptSudo = installPrompt + " (requires sudo)"
 )
 
 type tool struct {
@@ -117,11 +127,11 @@ func Check(env Env) error {
 	hasBrew := env.OS() == "darwin" && env.LookPath("brew")
 
 	// Non-brew installs write to system paths and require sudo.
-	confirmTitle := "Required tools are missing. Install them now?"
+	confirmTitle := installPrompt
 	if !hasBrew {
 		say(out, "  ⚠️  Installing these tools requires sudo access.\n")
 		say(out, "\n")
-		confirmTitle = "Required tools are missing. Install them now? (requires sudo)"
+		confirmTitle = installPromptSudo
 	}
 
 	install, err := env.Confirm(confirmTitle)
@@ -135,7 +145,7 @@ func Check(env Env) error {
 			say(out, "  • %s: %s\n", t.name, t.docsURL)
 		}
 		say(out, "\n")
-		return fmt.Errorf("required tools not installed")
+		return ErrNotInstalled
 	}
 
 	for _, t := range missing {
