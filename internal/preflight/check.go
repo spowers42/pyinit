@@ -59,6 +59,8 @@ type Env interface {
 	Confirm(title string) (bool, error)
 	// FileExists reports whether path exists on disk.
 	FileExists(path string) bool
+	// HomeDir returns the user's home directory ($HOME).
+	HomeDir() string
 	// Runner executes install commands.
 	Runner() runner.Runner
 	// Out is where user-facing messages are written.
@@ -88,6 +90,9 @@ func (RealEnv) FileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// HomeDir returns $HOME.
+func (RealEnv) HomeDir() string { return os.Getenv("HOME") }
 
 // Confirm shows an install yes/no prompt.
 func (RealEnv) Confirm(title string) (bool, error) {
@@ -187,8 +192,8 @@ func existsInCommonPaths(env Env, name string) bool {
 	common := []string{
 		"/usr/local/bin/" + name,
 		"/opt/homebrew/bin/" + name,
-		os.ExpandEnv("$HOME/.cargo/bin/" + name),
-		os.ExpandEnv("$HOME/.local/bin/" + name),
+		env.HomeDir() + "/.cargo/bin/" + name,
+		env.HomeDir() + "/.local/bin/" + name,
 	}
 	for _, p := range common {
 		if env.FileExists(p) {

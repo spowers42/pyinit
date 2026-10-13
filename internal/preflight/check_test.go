@@ -22,6 +22,7 @@ type fakeEnv struct {
 
 func (f *fakeEnv) LookPath(name string) bool   { return f.onPath[name] }
 func (f *fakeEnv) OS() string                  { return f.goos }
+func (f *fakeEnv) HomeDir() string             { return "/home/test" }
 func (f *fakeEnv) FileExists(path string) bool { return f.files[path] }
 func (f *fakeEnv) Runner() runner.Runner       { return &f.run }
 func (f *fakeEnv) Out() io.Writer              { return &f.out }
@@ -164,4 +165,16 @@ func TestCheckRecheckCommonPathsFallback(t *testing.T) {
 	}
 	assertPrompts(t, e, installPromptSudo)
 	assertCalls(t, e, "sudo sh -c curl -LsSf https://astral.sh/uv/install.sh | sh")
+}
+
+func TestCheckRecheckHomePathsFallback(t *testing.T) {
+	for _, path := range []string{"/home/test/.cargo/bin/uv", "/home/test/.local/bin/uv"} {
+		t.Run(path, func(t *testing.T) {
+			e := newEnv("linux", "task")
+			e.files[path] = true
+			if err := Check(e); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
 }
