@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/scottp/pyinit/internal/preflight"
+	"github.com/scottp/pyinit/internal/runner"
 	"github.com/scottp/pyinit/internal/scaffold"
 	"github.com/scottp/pyinit/internal/tui"
 )
@@ -30,7 +31,7 @@ func main() {
 
 	fmt.Printf("\nCreating project %q in %s...\n", cfg.ProjectName, cfg.OutputDir)
 
-	if err := scaffold.Run(cfg); err != nil {
+	if err := scaffold.Run(cfg, runner.Exec{}); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}

@@ -25,7 +25,7 @@ The tool runs in four sequential phases defined in `main.go`:
 
 3. **`internal/config`** — `config.New(Input)` validates the raw input and returns a `ProjectConfig`, or an error. It owns project-name and Python-version validation, and derives `PackageName` (hyphens → underscores), `PythonVersionTag` (e.g. `"312"`) and the resolved `OutputDir` (empty → home, `~` expanded, made absolute). It is the unit-test seam: `go test ./internal/config`.
 
-4. **`internal/scaffold`** — creates the project on disk from a `config.ProjectConfig`. Sequence: `mkdir` → `uv init` → move `main.py` into `src/<package>/` → write `__init__.py` / `tests/` / `docs/` → render four Go templates (overwriting uv's minimal `pyproject.toml`) → `uv venv`.
+4. **`internal/scaffold`** — creates the project on disk from a `config.ProjectConfig`. `scaffold.Run(cfg, runner)` takes an `internal/runner.Runner` (the process seam): `runner.Exec{}` in production, `runner.Fake` in tests (`go test ./internal/scaffold`). Sequence: `mkdir` → `uv init` → move `main.py` into `src/<package>/` → write `__init__.py` / `tests/` / `docs/` → render four Go templates (overwriting uv's minimal `pyproject.toml`) → `uv venv`.
 
 ## Templates
 
