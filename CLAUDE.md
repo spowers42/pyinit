@@ -38,3 +38,17 @@ Use `spp/` as the branch prefix (e.g. `spp/my-feature`).
 ## Linter config
 
 golangci-lint v2 (`version: "2"` in `.golangci.yml`). Formatters (`gofmt`, `goimports`) are declared under `formatters:`, not `linters:` — this is a v2 requirement. `goimports` is configured with local prefix `github.com/scottp/pyinit`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues for spowers42/pyinit (via the `gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
