@@ -17,17 +17,19 @@ Go binary path: `/usr/local/go/bin/go` (not on PATH by default in this environme
 
 ## Architecture
 
-The tool runs in three sequential phases defined in `main.go`:
+The tool runs in four sequential phases defined in `main.go`:
 
 1. **`internal/preflight`** — checks that `uv` and `task` are on PATH; if not, offers a `huh` confirm prompt and installs via Homebrew (macOS) or official curl scripts as fallback.
 
-2. **`internal/tui`** — renders a three-group `charmbracelet/huh` form and returns a `ProjectConfig` struct. `PackageName` (hyphens → underscores) and `PythonVersionTag` (e.g. `"312"`) are derived fields computed after the form completes.
+2. **`internal/tui`** — renders a three-group `charmbracelet/huh` form that collects raw `config.Input` values. It only builds the form; field validation is delegated to `internal/config`.
 
-3. **`internal/scaffold`** — creates the project on disk. Sequence: `mkdir` → `uv init` → move `main.py` into `src/<package>/` → write `__init__.py` / `tests/` / `docs/` → render four Go templates (overwriting uv's minimal `pyproject.toml`) → `uv venv`.
+3. **`internal/config`** — `config.New(Input)` validates the raw input and returns a `ProjectConfig`, or an error. It owns project-name and Python-version validation, and derives `PackageName` (hyphens → underscores), `PythonVersionTag` (e.g. `"312"`) and the resolved `OutputDir` (empty → home, `~` expanded, made absolute). It is the unit-test seam: `go test ./internal/config`.
+
+4. **`internal/scaffold`** — creates the project on disk from a `config.ProjectConfig`. Sequence: `mkdir` → `uv init` → move `main.py` into `src/<package>/` → write `__init__.py` / `tests/` / `docs/` → render four Go templates (overwriting uv's minimal `pyproject.toml`) → `uv venv`.
 
 ## Templates
 
-All four templates live in `internal/scaffold/templates/` and are embedded into the binary at compile time via `//go:embed templates/*`. They use Go's `text/template` with `tui.ProjectConfig` as the data object. **Editing a template requires a rebuild** — there are no runtime assets.
+All four templates live in `internal/scaffold/templates/` and are embedded into the binary at compile time via `//go:embed templates/*`. They use Go's `text/template` with `config.ProjectConfig` as the data object. **Editing a template requires a rebuild** — there are no runtime assets.
 
 Key template fields: `.ProjectName`, `.PackageName`, `.Description`, `.AuthorName`, `.AuthorEmail`, `.PythonVersion`, `.PythonVersionTag`.
 

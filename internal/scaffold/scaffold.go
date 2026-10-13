@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"text/template"
 
-	"github.com/scottp/pyinit/internal/tui"
+	"github.com/scottp/pyinit/internal/config"
 )
 
 //go:embed templates/*
 var templateFS embed.FS
 
-func Run(cfg tui.ProjectConfig) error {
+func Run(cfg config.ProjectConfig) error {
 	projectDir := filepath.Join(cfg.OutputDir, cfg.ProjectName)
 
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
@@ -87,7 +87,7 @@ func Run(cfg tui.ProjectConfig) error {
 	return nil
 }
 
-func renderTemplate(cfg tui.ProjectConfig, tmplPath, dstPath string) error {
+func renderTemplate(cfg config.ProjectConfig, tmplPath, dstPath string) error {
 	data, err := templateFS.ReadFile(tmplPath)
 	if err != nil {
 		return fmt.Errorf("read template %s: %w", tmplPath, err)
