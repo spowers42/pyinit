@@ -18,7 +18,7 @@ func main() {
 	fmt.Printf("pyinit %s — bootstrap a new Python project\n", version)
 	fmt.Println()
 
-	if err := preflight.Check(preflight.RealEnv{}); err != nil {
+	if err := preflight.Check(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}

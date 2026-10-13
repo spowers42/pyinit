@@ -14,7 +14,7 @@ Go binary path: `/usr/local/go/bin/go` (not on PATH by default in this environme
 
 The tool runs in four sequential phases defined in `main.go`:
 
-1. **`internal/preflight`** — checks that `uv` and `task` are on PATH; if not, offers a `huh` confirm prompt and installs via Homebrew (macOS) or official curl scripts under `sudo` as fallback. `preflight.Check(env)` takes a `preflight.Env` (the environment seam: PATH lookup, OS, confirm prompt, file existence, `runner.Runner`, output writer): `preflight.RealEnv{}` in production, a fake env wrapping `runner.Fake` in tests (`go test ./internal/preflight`).
+1. **`internal/preflight`** — checks that `uv` and `task` are on PATH; if not, offers a `huh` confirm prompt and installs via Homebrew (macOS) or official curl scripts as fallback.
 
 2. **`internal/tui`** — renders a three-group `charmbracelet/huh` form that collects raw `config.Input` values. It only builds the form; field validation is delegated to `internal/config`.
 
