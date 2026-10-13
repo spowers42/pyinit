@@ -10,9 +10,14 @@ import (
 	"github.com/spowers42/pyinit/internal/runner"
 )
 
+const (
+	sudoPrompt  = "Required tools are missing. Install them now? (requires sudo)"
+	plainPrompt = "Required tools are missing. Install them now?"
+)
+
 type fakeEnv struct {
 	onPath  map[string]bool
-	os      string
+	goos    string
 	confirm bool
 	files   map[string]bool
 	run     runner.Fake
@@ -21,7 +26,7 @@ type fakeEnv struct {
 }
 
 func (f *fakeEnv) LookPath(n string) bool   { return f.onPath[n] }
-func (f *fakeEnv) OS() string               { return f.os }
+func (f *fakeEnv) OS() string               { return f.goos }
 func (f *fakeEnv) FileExists(p string) bool { return f.files[p] }
 func (f *fakeEnv) Runner() runner.Runner    { return &f.run }
 func (f *fakeEnv) Out() io.Writer           { return &f.out }
@@ -30,77 +35,113 @@ func (f *fakeEnv) Confirm(t string) (bool, error) {
 	return f.confirm, nil
 }
 
-func newEnv(os string, onPath ...string) *fakeEnv {
-	e := &fakeEnv{os: os, onPath: map[string]bool{}, files: map[string]bool{}, confirm: true}
+func newEnv(goos string, onPath ...string) *fakeEnv {
+	e := &fakeEnv{goos: goos, onPath: map[string]bool{}, files: map[string]bool{}, confirm: true}
 	for _, p := range onPath {
 		e.onPath[p] = true
 	}
 	return e
 }
 
-func TestAllPresent(t *testing.T) {
+// installsOntoPath makes every install command put tools on PATH, as a successful install would.
+func (f *fakeEnv) installsOntoPath() {
+	f.run.OnRun = func(runner.Call) error {
+		for _, t := range required {
+			f.onPath[t.name] = true
+		}
+		return nil
+	}
+}
+
+func assertPrompts(t *testing.T, e *fakeEnv, want ...string) {
+	t.Helper()
+	if strings.Join(e.prompts, "|") != strings.Join(want, "|") {
+		t.Fatalf("prompts = %q, want %q", e.prompts, want)
+	}
+}
+
+func assertCalls(t *testing.T, e *fakeEnv, want ...string) {
+	t.Helper()
+	var got []string
+	for _, c := range e.run.Calls {
+		got = append(got, c.String())
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("calls = %q, want %q", got, want)
+	}
+}
+
+func TestCheckAllPresent(t *testing.T) {
 	e := newEnv("linux", "uv", "task")
 	if err := Check(e); err != nil {
 		t.Fatal(err)
 	}
-	if len(e.prompts) != 0 || len(e.run.Calls) != 0 || e.out.Len() != 0 {
-		t.Fatal("expected no side effects")
+	assertPrompts(t, e)
+	assertCalls(t, e)
+	if e.out.Len() != 0 {
+		t.Fatalf("unexpected output: %q", e.out.String())
 	}
 }
 
-func TestDecline(t *testing.T) {
-	e := newEnv("linux", "task")
+func TestCheckDecline(t *testing.T) {
+	e := newEnv("linux")
 	e.confirm = false
 	err := Check(e)
 	if err == nil || err.Error() != "required tools not installed" {
 		t.Fatalf("err = %v", err)
 	}
-	if !strings.Contains(e.out.String(), "https://docs.astral.sh/uv/getting-started/installation/") {
-		t.Fatalf("docs link missing: %q", e.out.String())
-	}
-	if len(e.run.Calls) != 0 {
-		t.Fatal("must not install")
+	assertPrompts(t, e, sudoPrompt)
+	assertCalls(t, e)
+	for _, link := range []string{
+		"uv: https://docs.astral.sh/uv/getting-started/installation/",
+		"task: https://taskfile.dev/installation/",
+	} {
+		if !strings.Contains(e.out.String(), link) {
+			t.Errorf("docs link %q missing from %q", link, e.out.String())
+		}
 	}
 }
 
-func TestBrewInstall(t *testing.T) {
-	e := newEnv("darwin", "brew", "task")
-	e.run.OnRun = func(runner.Call) error { e.onPath["uv"] = true; return nil }
+func TestCheckBrewInstall(t *testing.T) {
+	e := newEnv("darwin", "brew")
+	e.installsOntoPath()
 	if err := Check(e); err != nil {
 		t.Fatal(err)
 	}
-	if got := e.run.Calls[0].String(); got != "brew install uv" || len(e.run.Calls) != 1 {
-		t.Fatalf("calls = %v", e.run.Calls)
-	}
-	if strings.Contains(e.out.String(), "sudo") || strings.Contains(e.prompts[0], "sudo") {
+	assertPrompts(t, e, plainPrompt)
+	assertCalls(t, e, "brew install uv", "brew install go-task")
+	if strings.Contains(e.out.String(), "sudo") {
 		t.Fatal("brew path must not mention sudo")
 	}
 }
 
-func TestSudoInstall(t *testing.T) {
-	e := newEnv("linux", "task")
-	e.run.OnRun = func(runner.Call) error { e.onPath["uv"] = true; return nil }
+func TestCheckSudoInstall(t *testing.T) {
+	e := newEnv("linux")
+	e.installsOntoPath()
 	if err := Check(e); err != nil {
 		t.Fatal(err)
 	}
-	if c := e.run.Calls[0]; c.Name != "sudo" || c.Args[0] != "sh" {
-		t.Fatalf("call = %v", c)
-	}
-	if !strings.Contains(e.out.String(), "requires sudo") || !strings.Contains(e.prompts[0], "(requires sudo)") {
-		t.Fatal("sudo warning missing")
+	assertPrompts(t, e, sudoPrompt)
+	assertCalls(t, e,
+		"sudo sh -c curl -LsSf https://astral.sh/uv/install.sh | sh",
+		`sudo sh -c sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin`,
+	)
+	if !strings.Contains(e.out.String(), "Installing these tools requires sudo access.") {
+		t.Fatalf("sudo warning missing from %q", e.out.String())
 	}
 }
 
-func TestDarwinWithoutBrewUsesSudo(t *testing.T) {
+func TestCheckDarwinWithoutBrewUsesSudo(t *testing.T) {
 	e := newEnv("darwin", "task")
-	e.run.OnRun = func(runner.Call) error { e.onPath["uv"] = true; return nil }
-	_ = Check(e)
-	if e.run.Calls[0].Name != "sudo" {
-		t.Fatalf("call = %v", e.run.Calls[0])
+	e.installsOntoPath()
+	if err := Check(e); err != nil {
+		t.Fatal(err)
 	}
+	assertPrompts(t, e, sudoPrompt)
+	assertCalls(t, e, "sudo sh -c curl -LsSf https://astral.sh/uv/install.sh | sh")
 }
 
-func TestInstallFailureWrapped(t *testing.T) {
+func TestCheckInstallFailureWrapped(t *testing.T) {
 	e := newEnv("linux", "task")
 	boom := errors.New("boom")
 	e.run.OnRun = func(runner.Call) error { return boom }
@@ -110,7 +151,7 @@ func TestInstallFailureWrapped(t *testing.T) {
 	}
 }
 
-func TestRecheckNotOnPath(t *testing.T) {
+func TestCheckRecheckNotOnPath(t *testing.T) {
 	e := newEnv("linux", "task")
 	err := Check(e)
 	if err == nil || !strings.Contains(err.Error(), "uv was installed but is not on PATH") {
@@ -118,7 +159,7 @@ func TestRecheckNotOnPath(t *testing.T) {
 	}
 }
 
-func TestRecheckCommonPathsFallback(t *testing.T) {
+func TestCheckRecheckCommonPathsFallback(t *testing.T) {
 	e := newEnv("linux", "task")
 	e.files["/usr/local/bin/uv"] = true
 	if err := Check(e); err != nil {

@@ -1,3 +1,4 @@
+// Package preflight ensures the external tools pyinit depends on are installed.
 package preflight
 
 import (
@@ -57,16 +58,28 @@ type Env interface {
 // RealEnv is the production Env.
 type RealEnv struct{}
 
-func (RealEnv) LookPath(name string) bool { _, err := exec.LookPath(name); return err == nil }
-func (RealEnv) OS() string                { return runtime.GOOS }
-func (RealEnv) Runner() runner.Runner     { return runner.Exec{} }
-func (RealEnv) Out() io.Writer            { return os.Stdout }
+// LookPath reports whether name is on PATH.
+func (RealEnv) LookPath(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
 
+// OS returns runtime.GOOS.
+func (RealEnv) OS() string { return runtime.GOOS }
+
+// Runner returns a runner.Exec.
+func (RealEnv) Runner() runner.Runner { return runner.Exec{} }
+
+// Out returns os.Stdout.
+func (RealEnv) Out() io.Writer { return os.Stdout }
+
+// FileExists reports whether path exists.
 func (RealEnv) FileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
 
+// Confirm shows an install yes/no prompt.
 func (RealEnv) Confirm(title string) (bool, error) {
 	var ok bool
 	err := huh.NewForm(
@@ -81,6 +94,7 @@ func (RealEnv) Confirm(title string) (bool, error) {
 	return ok, err
 }
 
+// Check finds missing required tools and, with the user's consent, installs them.
 func Check(env Env) error {
 	out := env.Out()
 	var missing []tool
@@ -94,19 +108,19 @@ func Check(env Env) error {
 		return nil
 	}
 
-	fmt.Fprintln(out)
+	say(out, "\n")
 	for _, t := range missing {
-		fmt.Fprintf(out, "  ✗ %s is not installed\n", t.name)
+		say(out, "  ✗ %s is not installed\n", t.name)
 	}
-	fmt.Fprintln(out)
+	say(out, "\n")
 
 	hasBrew := env.OS() == "darwin" && env.LookPath("brew")
 
 	// Non-brew installs write to system paths and require sudo.
 	confirmTitle := "Required tools are missing. Install them now?"
 	if !hasBrew {
-		fmt.Fprintln(out, "  ⚠️  Installing these tools requires sudo access.")
-		fmt.Fprintln(out)
+		say(out, "  ⚠️  Installing these tools requires sudo access.\n")
+		say(out, "\n")
 		confirmTitle = "Required tools are missing. Install them now? (requires sudo)"
 	}
 
@@ -116,11 +130,11 @@ func Check(env Env) error {
 	}
 
 	if !install {
-		fmt.Fprintln(out, "\nTo install manually, visit:")
+		say(out, "\nTo install manually, visit:\n")
 		for _, t := range missing {
-			fmt.Fprintf(out, "  • %s: %s\n", t.name, t.docsURL)
+			say(out, "  • %s: %s\n", t.name, t.docsURL)
 		}
-		fmt.Fprintln(out)
+		say(out, "\n")
 		return fmt.Errorf("required tools not installed")
 	}
 
@@ -145,13 +159,18 @@ func Check(env Env) error {
 }
 
 func installTool(env Env, t tool, hasBrew bool) error {
-	fmt.Fprintf(env.Out(), "\n  Installing %s...\n", t.name)
+	say(env.Out(), "\n  Installing %s...\n", t.name)
 
 	if hasBrew {
 		return env.Runner().Run("", "brew", "install", t.brewPkg)
 	}
 	// Non-brew installs write to system paths (e.g. /usr/local/bin) and require sudo.
 	return env.Runner().Run("", "sudo", t.installCmd...)
+}
+
+// say writes a user-facing message. Write errors to the terminal are not actionable, so they are dropped.
+func say(w io.Writer, format string, a ...any) {
+	_, _ = fmt.Fprintf(w, format, a...)
 }
 
 func existsInCommonPaths(env Env, name string) bool {
