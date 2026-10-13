@@ -4,17 +4,26 @@ import (
 	"embed"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"text/template"
 
 	"github.com/scottp/pyinit/internal/config"
+	"github.com/scottp/pyinit/internal/runner"
 )
 
 //go:embed templates/*
 var templateFS embed.FS
 
-func Run(cfg config.ProjectConfig) error {
+// templates maps each embedded template to its destination relative to the project dir.
+var templates = []struct{ src, dst string }{
+	{"templates/pyproject.toml.tmpl", "pyproject.toml"},
+	{"templates/README.md.tmpl", "README.md"},
+	{"templates/Taskfile.yml.tmpl", "Taskfile.yml"},
+	{"templates/gitignore.tmpl", ".gitignore"},
+}
+
+// Run creates the project on disk, executing external commands through r.
+func Run(cfg config.ProjectConfig, r runner.Runner) error {
 	projectDir := filepath.Join(cfg.OutputDir, cfg.ProjectName)
 
 	if err := os.MkdirAll(projectDir, 0755); err != nil {
@@ -22,11 +31,7 @@ func Run(cfg config.ProjectConfig) error {
 	}
 
 	fmt.Printf("\n  Running uv init...\n")
-	uvInit := exec.Command("uv", "init", "--python", cfg.PythonVersion, ".")
-	uvInit.Dir = projectDir
-	uvInit.Stdout = os.Stdout
-	uvInit.Stderr = os.Stderr
-	if err := uvInit.Run(); err != nil {
+	if err := r.Run(projectDir, "uv", "init", "--python", cfg.PythonVersion, "."); err != nil {
 		return fmt.Errorf("uv init: %w", err)
 	}
 
@@ -62,32 +67,21 @@ func Run(cfg config.ProjectConfig) error {
 		return fmt.Errorf("create docs dir: %w", err)
 	}
 
-	if err := renderTemplate(cfg, "templates/pyproject.toml.tmpl", filepath.Join(projectDir, "pyproject.toml")); err != nil {
-		return err
-	}
-	if err := renderTemplate(cfg, "templates/README.md.tmpl", filepath.Join(projectDir, "README.md")); err != nil {
-		return err
-	}
-	if err := renderTemplate(cfg, "templates/Taskfile.yml.tmpl", filepath.Join(projectDir, "Taskfile.yml")); err != nil {
-		return err
-	}
-	if err := renderTemplate(cfg, "templates/gitignore.tmpl", filepath.Join(projectDir, ".gitignore")); err != nil {
-		return err
+	for _, t := range templates {
+		if err := renderTemplate(cfg, t.src, filepath.Join(projectDir, t.dst)); err != nil {
+			return err
+		}
 	}
 
 	fmt.Printf("  Running uv venv...\n")
-	uvVenv := exec.Command("uv", "venv")
-	uvVenv.Dir = projectDir
-	uvVenv.Stdout = os.Stdout
-	uvVenv.Stderr = os.Stderr
-	if err := uvVenv.Run(); err != nil {
+	if err := r.Run(projectDir, "uv", "venv"); err != nil {
 		return fmt.Errorf("uv venv: %w", err)
 	}
 
 	return nil
 }
 
-func renderTemplate(cfg config.ProjectConfig, tmplPath, dstPath string) error {
+func renderTemplate(cfg config.ProjectConfig, tmplPath, dstPath string) (err error) {
 	data, err := templateFS.ReadFile(tmplPath)
 	if err != nil {
 		return fmt.Errorf("read template %s: %w", tmplPath, err)
