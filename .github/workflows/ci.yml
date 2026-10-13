@@ -23,7 +23,7 @@ jobs:
           cache: true
 
       - name: Install Task
-        uses: arduino/setup-task@v2
+        run: go install github.com/go-task/task/v3/cmd/task@v3.54.0
 
       - name: Build
         run: task build
