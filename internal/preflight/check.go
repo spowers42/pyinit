@@ -1,12 +1,26 @@
+// Package preflight ensures the external tools pyinit depends on are installed.
 package preflight
 
 import (
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"runtime"
 
 	"github.com/charmbracelet/huh"
+
+	"github.com/spowers42/pyinit/internal/runner"
+)
+
+// ErrNotInstalled is returned when the user declines to install missing tools.
+var ErrNotInstalled = errors.New("required tools not installed")
+
+// Install prompt titles; the sudo variant is shown when installs fall back to sudo.
+const (
+	installPrompt     = "Required tools are missing. Install them now?"
+	installPromptSudo = installPrompt + " (requires sudo)"
 )
 
 type tool struct {
@@ -35,10 +49,67 @@ var required = []tool{
 	},
 }
 
-func Check() error {
+// Env is the seam over everything Check touches outside its own decisions.
+type Env interface {
+	// LookPath reports whether name is on PATH.
+	LookPath(name string) bool
+	// OS returns the operating system identifier (runtime.GOOS).
+	OS() string
+	// Confirm asks the user a yes/no question.
+	Confirm(title string) (bool, error)
+	// FileExists reports whether path exists on disk.
+	FileExists(path string) bool
+	// Runner executes install commands.
+	Runner() runner.Runner
+	// Out is where user-facing messages are written.
+	Out() io.Writer
+}
+
+// RealEnv is the production Env.
+type RealEnv struct{}
+
+// LookPath reports whether name is on PATH.
+func (RealEnv) LookPath(name string) bool {
+	_, err := exec.LookPath(name)
+	return err == nil
+}
+
+// OS returns runtime.GOOS.
+func (RealEnv) OS() string { return runtime.GOOS }
+
+// Runner returns a runner.Exec.
+func (RealEnv) Runner() runner.Runner { return runner.Exec{} }
+
+// Out returns os.Stdout.
+func (RealEnv) Out() io.Writer { return os.Stdout }
+
+// FileExists reports whether path exists.
+func (RealEnv) FileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// Confirm shows an install yes/no prompt.
+func (RealEnv) Confirm(title string) (bool, error) {
+	var ok bool
+	err := huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(title).
+				Affirmative("Yes, install").
+				Negative("No, exit").
+				Value(&ok),
+		),
+	).Run()
+	return ok, err
+}
+
+// Check finds missing required tools and, with the user's consent, installs them.
+func Check(env Env) error {
+	out := env.Out()
 	var missing []tool
 	for _, t := range required {
-		if _, err := exec.LookPath(t.name); err != nil {
+		if !env.LookPath(t.name) {
 			missing = append(missing, t)
 		}
 	}
@@ -47,62 +118,48 @@ func Check() error {
 		return nil
 	}
 
-	fmt.Println()
+	say(out, "\n")
 	for _, t := range missing {
-		fmt.Printf("  ✗ %s is not installed\n", t.name)
+		say(out, "  ✗ %s is not installed\n", t.name)
 	}
-	fmt.Println()
+	say(out, "\n")
 
-	hasBrew := false
-	if runtime.GOOS == "darwin" {
-		if _, err := exec.LookPath("brew"); err == nil {
-			hasBrew = true
-		}
-	}
+	hasBrew := env.OS() == "darwin" && env.LookPath("brew")
 
 	// Non-brew installs write to system paths and require sudo.
-	confirmTitle := "Required tools are missing. Install them now?"
+	confirmTitle := installPrompt
 	if !hasBrew {
-		fmt.Println("  ⚠️  Installing these tools requires sudo access.")
-		fmt.Println()
-		confirmTitle = "Required tools are missing. Install them now? (requires sudo)"
+		say(out, "  ⚠️  Installing these tools requires sudo access.\n")
+		say(out, "\n")
+		confirmTitle = installPromptSudo
 	}
 
-	var install bool
-	prompt := huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title(confirmTitle).
-				Affirmative("Yes, install").
-				Negative("No, exit").
-				Value(&install),
-		),
-	)
-	if err := prompt.Run(); err != nil {
+	install, err := env.Confirm(confirmTitle)
+	if err != nil {
 		return err
 	}
 
 	if !install {
-		fmt.Println("\nTo install manually, visit:")
+		say(out, "\nTo install manually, visit:\n")
 		for _, t := range missing {
-			fmt.Printf("  • %s: %s\n", t.name, t.docsURL)
+			say(out, "  • %s: %s\n", t.name, t.docsURL)
 		}
-		fmt.Println()
-		return fmt.Errorf("required tools not installed")
+		say(out, "\n")
+		return ErrNotInstalled
 	}
 
 	for _, t := range missing {
-		if err := installTool(t, hasBrew); err != nil {
+		if err := installTool(env, t, hasBrew); err != nil {
 			return fmt.Errorf("failed to install %s: %w", t.name, err)
 		}
 	}
 
 	// Re-check after install
 	for _, t := range missing {
-		if _, err := exec.LookPath(t.name); err != nil {
+		if !env.LookPath(t.name) {
 			// Tool may have been installed to a path not yet in this process's PATH.
 			// Try common locations before giving up.
-			if !existsInCommonPaths(t.name) {
+			if !existsInCommonPaths(env, t.name) {
 				return fmt.Errorf("%s was installed but is not on PATH — open a new terminal and try again", t.name)
 			}
 		}
@@ -111,24 +168,22 @@ func Check() error {
 	return nil
 }
 
-func installTool(t tool, hasBrew bool) error {
-	fmt.Printf("\n  Installing %s...\n", t.name)
+func installTool(env Env, t tool, hasBrew bool) error {
+	say(env.Out(), "\n  Installing %s...\n", t.name)
 
-	var cmd *exec.Cmd
 	if hasBrew {
-		cmd = exec.Command("brew", "install", t.brewPkg)
-	} else {
-		// Non-brew installs write to system paths (e.g. /usr/local/bin) and require sudo.
-		sudoArgs := append([]string{"sudo"}, t.installCmd...)
-		cmd = exec.Command(sudoArgs[0], sudoArgs[1:]...)
+		return env.Runner().Run("", "brew", "install", t.brewPkg)
 	}
-
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	// Non-brew installs write to system paths (e.g. /usr/local/bin) and require sudo.
+	return env.Runner().Run("", "sudo", t.installCmd...)
 }
 
-func existsInCommonPaths(name string) bool {
+// say writes a user-facing message. Write errors to the terminal are not actionable, so they are dropped.
+func say(w io.Writer, format string, a ...any) {
+	_, _ = fmt.Fprintf(w, format, a...)
+}
+
+func existsInCommonPaths(env Env, name string) bool {
 	common := []string{
 		"/usr/local/bin/" + name,
 		"/opt/homebrew/bin/" + name,
@@ -136,7 +191,7 @@ func existsInCommonPaths(name string) bool {
 		os.ExpandEnv("$HOME/.local/bin/" + name),
 	}
 	for _, p := range common {
-		if _, err := os.Stat(p); err == nil {
+		if env.FileExists(p) {
 			return true
 		}
 	}
