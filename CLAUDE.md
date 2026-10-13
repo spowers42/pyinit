@@ -4,16 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & dev commands
 
-```bash
-task build               # go build -o pyinit .
-task lint                # golangci-lint run ./...
-task test                # go test ./...
-task check               # lint + test
-task clean               # remove the pyinit binary
-task install-golangci-lint  # brew install golangci-lint (first-time setup)
-```
+Run `task --list`. Run `task install-hooks` once per clone (pre-commit runs `task check`).
 
 Go binary path: `/usr/local/go/bin/go` (not on PATH by default in this environment).
+
+**TUI changes** (`internal/tui`) require updating `demo/` in the same PR; CI enforces it via `task demo-sync`.
 
 ## Architecture
 
@@ -39,7 +34,7 @@ Use `spp/` as the branch prefix (e.g. `spp/my-feature`).
 
 ## Linter config
 
-golangci-lint v2 (`version: "2"` in `.golangci.yml`). Formatters (`gofmt`, `goimports`) are declared under `formatters:`, not `linters:` — this is a v2 requirement. `goimports` is configured with local prefix `github.com/scottp/pyinit`.
+golangci-lint v2 (`version: "2"` in `.golangci.yml`). Formatters (`gofmt`, `goimports`) are declared under `formatters:`, not `linters:` — this is a v2 requirement. `goimports` is configured with local prefix `github.com/spowers42/pyinit`.
 
 ## Agent skills
 

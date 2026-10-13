@@ -8,6 +8,8 @@ linters:
     - staticcheck
     - unused
     - misspell
+    - errorlint
+    - gocritic
   exclusions:
     rules:
       - path: _test\.go
@@ -22,4 +24,4 @@ formatters:
   settings:
     goimports:
       local-prefixes:
-        - github.com/scottp/pyinit
+        - github.com/spowers42/pyinit

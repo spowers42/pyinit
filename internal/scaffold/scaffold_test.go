@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/scottp/pyinit/internal/config"
-	"github.com/scottp/pyinit/internal/runner"
+	"github.com/spowers42/pyinit/internal/config"
+	"github.com/spowers42/pyinit/internal/runner"
 )
 
 func testConfig(t *testing.T) config.ProjectConfig {

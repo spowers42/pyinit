@@ -21,6 +21,14 @@ tasks:
     desc: Lint and test
     deps: [lint, test]
 
+  demo-sync:
+    desc: Fail if internal/tui changed without demo/
+    cmd: scripts/check-demo-sync.sh
+
+  install-hooks:
+    desc: Install the git pre-commit hook (runs task check)
+    cmd: ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
+
   clean:
     desc: Remove built binary
     cmd: rm -f pyinit

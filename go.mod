@@ -1,4 +1,4 @@
-module github.com/scottp/pyinit
+module github.com/spowers42/pyinit
 
 go 1.23.0
 
