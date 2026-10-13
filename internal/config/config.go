@@ -33,7 +33,7 @@ type ProjectConfig struct {
 
 var (
 	validName    = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
-	validVersion = regexp.MustCompile(`^(\d+)\.(\d+)(?:\.\d+)?$`)
+	validVersion = regexp.MustCompile(`^([1-9]\d*)\.(0|[1-9]\d*)(?:\.(?:0|[1-9]\d*))?$`)
 )
 
 // ValidateName reports whether s is an acceptable project name.
@@ -49,10 +49,23 @@ func ValidateName(s string) error {
 
 // ValidatePythonVersion accepts MAJOR.MINOR or MAJOR.MINOR.PATCH.
 func ValidatePythonVersion(s string) error {
-	if !validVersion.MatchString(s) {
-		return errors.New("python version must be MAJOR.MINOR or MAJOR.MINOR.PATCH (e.g. 3.12)")
+	_, err := versionTag(s)
+	return err
+}
+
+// ValidateOutputDir reports whether s can be resolved to an output directory.
+func ValidateOutputDir(s string) error {
+	_, err := resolveOutputDir(s)
+	return err
+}
+
+// versionTag converts "3.12" or "3.12.4" to "312" for ruff's target-version.
+func versionTag(version string) (string, error) {
+	parts := validVersion.FindStringSubmatch(version)
+	if parts == nil {
+		return "", errors.New("python version must be MAJOR.MINOR or MAJOR.MINOR.PATCH (e.g. 3.12)")
 	}
-	return nil
+	return parts[1] + parts[2], nil
 }
 
 // New validates in and returns a complete ProjectConfig.
@@ -60,14 +73,14 @@ func New(in Input) (ProjectConfig, error) {
 	if err := ValidateName(in.ProjectName); err != nil {
 		return ProjectConfig{}, err
 	}
-	if err := ValidatePythonVersion(in.PythonVersion); err != nil {
+	tag, err := versionTag(in.PythonVersion)
+	if err != nil {
 		return ProjectConfig{}, err
 	}
 	outDir, err := resolveOutputDir(in.OutputDir)
 	if err != nil {
 		return ProjectConfig{}, err
 	}
-	m := validVersion.FindStringSubmatch(in.PythonVersion)
 	return ProjectConfig{
 		ProjectName:      in.ProjectName,
 		PackageName:      strings.ReplaceAll(in.ProjectName, "-", "_"),
@@ -75,21 +88,25 @@ func New(in Input) (ProjectConfig, error) {
 		AuthorName:       in.AuthorName,
 		AuthorEmail:      in.AuthorEmail,
 		PythonVersion:    in.PythonVersion,
-		PythonVersionTag: m[1] + m[2],
+		PythonVersionTag: tag,
 		OutputDir:        outDir,
 	}, nil
 }
 
+// resolveOutputDir defaults "" to the home directory, expands a leading "~" or
+// "~/", and makes the result absolute. "~user" forms are rejected.
 func resolveOutputDir(dir string) (string, error) {
-	if dir == "" || dir == "~" || strings.HasPrefix(dir, "~/") {
+	switch {
+	case dir == "":
+		return os.UserHomeDir()
+	case dir == "~" || strings.HasPrefix(dir, "~/"):
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return "", err
 		}
-		if dir == "" {
-			return home, nil
-		}
 		return filepath.Join(home, dir[1:]), nil
+	case dir[0] == '~':
+		return "", errors.New("only ~ and ~/path are supported, not ~user")
 	}
 	return filepath.Abs(dir)
 }

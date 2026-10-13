@@ -9,7 +9,16 @@ import (
 func TestNew(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	cwd, err := os.Getwd()
+	wd := t.TempDir()
+	prev, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(wd); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(prev) })
+	cwd, err := os.Getwd() // may differ from wd if the temp dir is a symlink
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,6 +64,14 @@ func TestNew(t *testing.T) {
 			in:   Input{ProjectName: "app", Description: "d", AuthorName: "A", AuthorEmail: "a@b.c", PythonVersion: "3.13", OutputDir: "/tmp/x"},
 			want: ProjectConfig{ProjectName: "app", PackageName: "app", Description: "d", AuthorName: "A", AuthorEmail: "a@b.c", PythonVersion: "3.13", PythonVersionTag: "313", OutputDir: "/tmp/x"},
 		},
+		{name: "underscore name", in: Input{ProjectName: "my_app", PythonVersion: "3.12", OutputDir: "/tmp/x"}, want: ProjectConfig{ProjectName: "my_app", PackageName: "my_app", PythonVersion: "3.12", PythonVersionTag: "312", OutputDir: "/tmp/x"}},
+		{name: "leading hyphen name", in: Input{ProjectName: "-app", PythonVersion: "3.12"}, wantErr: "must be lowercase and start with a letter (a-z, 0-9, - and _ allowed)"},
+		{name: "leading underscore name", in: Input{ProjectName: "_app", PythonVersion: "3.12"}, wantErr: "must be lowercase and start with a letter (a-z, 0-9, - and _ allowed)"},
+		{name: "user tilde rejected", in: Input{ProjectName: "app", PythonVersion: "3.12", OutputDir: "~bob/x"}, wantErr: "only ~ and ~/path are supported, not ~user"},
+		{name: "leading zero version", in: Input{ProjectName: "app", PythonVersion: "3.012"}, wantErr: "python version must be MAJOR.MINOR or MAJOR.MINOR.PATCH (e.g. 3.12)"},
+		{name: "zero major version", in: Input{ProjectName: "app", PythonVersion: "0.0"}, wantErr: "python version must be MAJOR.MINOR or MAJOR.MINOR.PATCH (e.g. 3.12)"},
+		{name: "padded version", in: Input{ProjectName: "app", PythonVersion: " 3.12"}, wantErr: "python version must be MAJOR.MINOR or MAJOR.MINOR.PATCH (e.g. 3.12)"},
+		{name: "minor zero version", in: Input{ProjectName: "app", PythonVersion: "3.0", OutputDir: "/tmp/x"}, want: ProjectConfig{ProjectName: "app", PackageName: "app", PythonVersion: "3.0", PythonVersionTag: "30", OutputDir: "/tmp/x"}},
 		{name: "empty name", in: Input{PythonVersion: "3.12"}, wantErr: "project name is required"},
 		{name: "uppercase name", in: Input{ProjectName: "App", PythonVersion: "3.12"}, wantErr: "must be lowercase and start with a letter (a-z, 0-9, - and _ allowed)"},
 		{name: "digit-leading name", in: Input{ProjectName: "1app", PythonVersion: "3.12"}, wantErr: "must be lowercase and start with a letter (a-z, 0-9, - and _ allowed)"},
@@ -80,5 +97,24 @@ func TestNew(t *testing.T) {
 				t.Fatalf("got %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestValidators(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	check := func(t *testing.T, fn func(string) error, in string, wantOK bool) {
+		t.Helper()
+		if err := fn(in); (err == nil) != wantOK {
+			t.Fatalf("%q: err = %v, wantOK %v", in, err, wantOK)
+		}
+	}
+	for in, ok := range map[string]bool{"app": true, "my-app_2": true, "": false, "App": false, "-a": false, "_a": false, "1a": false} {
+		check(t, ValidateName, in, ok)
+	}
+	for in, ok := range map[string]bool{"3.12": true, "3.9": true, "3.12.4": true, "3": false, "x.y": false, "3.012": false, "": false} {
+		check(t, ValidatePythonVersion, in, ok)
+	}
+	for in, ok := range map[string]bool{"": true, "~": true, "~/x": true, "rel": true, "/abs": true, "~bob": false} {
+		check(t, ValidateOutputDir, in, ok)
 	}
 }
