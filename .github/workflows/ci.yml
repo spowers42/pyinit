@@ -23,7 +23,10 @@ jobs:
           cache: true
 
       - name: Install Task
-        run: go install github.com/go-task/task/v3/cmd/task@v3.54.0
+        uses: go-task/setup-task@v2
+
+      - name: Verify Task
+        run: task --version
 
       - name: Build
         run: task build
