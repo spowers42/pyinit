@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 
 	"github.com/charmbracelet/huh"
 
@@ -85,6 +86,10 @@ type Env interface {
 // RealEnv is the production Env.
 type RealEnv struct{}
 
+// systemDirs are the system-wide install directories Locate checks after PATH.
+// A var so tests can substitute writable directories.
+var systemDirs = []string{"/usr/local/bin", "/opt/homebrew/bin"}
+
 // Locate looks for name on PATH, then in common install directories that may not be on PATH.
 func (RealEnv) Locate(name string) (Location, bool) {
 	if p, err := exec.LookPath(name); err == nil {
@@ -94,12 +99,15 @@ func (RealEnv) Locate(name string) (Location, bool) {
 		return Location{Path: p, OnPath: true}, true
 	}
 	home := os.Getenv("HOME")
-	for _, dir := range []string{
-		"/usr/local/bin",
-		"/opt/homebrew/bin",
+	dirs := append(slices.Clone(systemDirs),
 		filepath.Join(home, ".cargo", "bin"),
 		filepath.Join(home, ".local", "bin"),
-	} {
+	)
+	// uv's installer honours $XDG_BIN_HOME.
+	if xdg := os.Getenv("XDG_BIN_HOME"); xdg != "" {
+		dirs = append(dirs, xdg)
+	}
+	for _, dir := range dirs {
 		p := filepath.Join(dir, name)
 		if fi, err := os.Stat(p); err == nil && !fi.IsDir() {
 			return Location{Path: p, OnPath: false}, true
@@ -181,29 +189,24 @@ func install(env Env, missing []tool) error {
 	}
 	say(out, "\n")
 
-	brew, ok := env.Locate("brew")
-	hasBrew := env.OS() == "darwin" && ok && brew.OnPath
-
-	needsSudo := false
-	if !hasBrew {
-		for _, t := range missing {
-			needsSudo = needsSudo || t.sudo
-		}
+	var brewPath string
+	if brew, found := env.Locate("brew"); found && env.OS() == "darwin" {
+		brewPath = brew.Path
 	}
 
 	confirmTitle := installPrompt
-	if needsSudo {
+	if slices.ContainsFunc(missing, func(t tool) bool { return t.needsSudo(brewPath) }) {
 		say(out, "  ⚠️  Installing these tools requires sudo access.\n")
 		say(out, "\n")
 		confirmTitle = installPromptSudo
 	}
 
-	ok, err := env.Confirm(confirmTitle)
+	confirmed, err := env.Confirm(confirmTitle)
 	if err != nil {
 		return err
 	}
 
-	if !ok {
+	if !confirmed {
 		say(out, "\nTo install manually, visit:\n")
 		for _, t := range missing {
 			say(out, "  • %s: %s\n", t.name, t.docsURL)
@@ -213,23 +216,31 @@ func install(env Env, missing []tool) error {
 	}
 
 	for _, t := range missing {
-		if err := installTool(env, t, hasBrew); err != nil {
+		say(out, "\n  Installing %s...\n", t.name)
+		cmd := t.installCommand(brewPath)
+		if err := env.Runner().Run("", cmd[0], cmd[1:]...); err != nil {
 			return fmt.Errorf("failed to install %s: %w", t.name, err)
 		}
 	}
 	return nil
 }
 
-func installTool(env Env, t tool, hasBrew bool) error {
-	say(env.Out(), "\n  Installing %s...\n", t.name)
+// needsSudo reports whether installing t needs sudo: only its fallback script
+// can, and only when brew (at brewPath) is unavailable.
+func (t tool) needsSudo(brewPath string) bool {
+	return brewPath == "" && t.sudo
+}
 
-	if hasBrew {
-		return env.Runner().Run("", "brew", "install", t.brewPkg)
+// installCommand returns the command line that installs t: brew from brewPath
+// if set, otherwise t's fallback script, under sudo if t.needsSudo.
+func (t tool) installCommand(brewPath string) []string {
+	if brewPath != "" {
+		return []string{brewPath, "install", t.brewPkg}
 	}
-	if t.sudo {
-		return env.Runner().Run("", "sudo", t.installCmd...)
+	if t.needsSudo(brewPath) {
+		return append([]string{"sudo"}, t.installCmd...)
 	}
-	return env.Runner().Run("", t.installCmd[0], t.installCmd[1:]...)
+	return t.installCmd
 }
 
 // say writes a user-facing message. Write errors to the terminal are not actionable, so they are dropped.

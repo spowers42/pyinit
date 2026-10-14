@@ -68,6 +68,15 @@ func assertCalls(t *testing.T, e *fakeEnv, want ...string) {
 	}
 }
 
+func assertOutputContains(t *testing.T, e *fakeEnv, want ...string) {
+	t.Helper()
+	for _, w := range want {
+		if !strings.Contains(e.out.String(), w) {
+			t.Errorf("output missing %q: %q", w, e.out.String())
+		}
+	}
+}
+
 // assertResolves runs name through r and checks the env's Fake saw it as path.
 func assertResolves(t *testing.T, e *fakeEnv, r runner.Runner, name, path string) {
 	t.Helper()
@@ -144,11 +153,22 @@ func TestCheckBrewInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	assertPrompts(t, e, installPrompt)
-	assertCalls(t, e, "brew install uv", "brew install go-task")
+	assertCalls(t, e, "/usr/bin/brew install uv", "/usr/bin/brew install go-task")
 	if strings.Contains(e.out.String(), "sudo") {
 		t.Fatal("brew path must not mention sudo")
 	}
 	assertResolves(t, e, r, "uv", "/usr/bin/uv")
+}
+
+func TestCheckBrewOffPathInstallsViaAbsolutePath(t *testing.T) {
+	e := newEnv("darwin", "uv")
+	e.located["brew"] = Location{Path: "/opt/homebrew/bin/brew", OnPath: false}
+	e.installsOntoPath()
+	if _, err := Check(e); err != nil {
+		t.Fatal(err)
+	}
+	assertPrompts(t, e, installPrompt)
+	assertCalls(t, e, "/opt/homebrew/bin/brew install go-task")
 }
 
 func TestCheckScriptInstallSudoOnlyForTask(t *testing.T) {
@@ -180,6 +200,17 @@ func TestCheckOnlyUVMissingLinuxNoSudo(t *testing.T) {
 	if strings.Contains(e.out.String(), "sudo") {
 		t.Fatalf("uv-only install must not mention sudo: %q", e.out.String())
 	}
+}
+
+func TestCheckOnlyTaskMissingLinuxUsesSudo(t *testing.T) {
+	e := newEnv("linux", "uv")
+	e.installsOntoPath()
+	if _, err := Check(e); err != nil {
+		t.Fatal(err)
+	}
+	assertPrompts(t, e, installPromptSudo)
+	assertCalls(t, e, `sudo sh -c sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin`)
+	assertOutputContains(t, e, "Installing these tools requires sudo access.")
 }
 
 func TestCheckTaskMissingDarwinWithoutBrewUsesSudo(t *testing.T) {
