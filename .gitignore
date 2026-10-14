@@ -2,3 +2,4 @@ pyinit
 .claude/
 grep
 .agents/
+dist/

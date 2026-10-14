@@ -1,5 +1,8 @@
 version: '3'
 
+vars:
+  GORELEASER_VERSION: v2.18.3 # keep in sync with .github/workflows/release.yml
+
 tasks:
   install-golangci-lint:
     desc: Install golangci-lint v2.12.2 (matches CI)
@@ -15,7 +18,9 @@ tasks:
 
   test:
     desc: Run tests
-    cmd: go test ./...
+    cmds:
+      - go test ./...
+      - scripts/next-version_test.sh
 
   check:
     desc: Lint and test
@@ -25,10 +30,19 @@ tasks:
     desc: Fail if internal/tui changed without demo/
     cmd: scripts/check-demo-sync.sh
 
+  release:
+    desc: 'Cut a release via the Release workflow: task release -- <patch|minor|major>'
+    interactive: true
+    cmd: scripts/release.sh {{.CLI_ARGS}}
+
+  snapshot:
+    desc: Build all release targets into dist/ without publishing
+    cmd: go run github.com/goreleaser/goreleaser/v2@{{.GORELEASER_VERSION}} release --snapshot --clean
+
   install-hooks:
     desc: Install the git pre-commit hook (runs task check)
     cmd: ln -sf ../../scripts/pre-commit .git/hooks/pre-commit
 
   clean:
-    desc: Remove built binary
-    cmd: rm -f pyinit
+    desc: Remove built binary and dist/
+    cmd: rm -rf pyinit dist

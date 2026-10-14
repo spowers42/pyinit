@@ -1,9 +1,11 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 
 	"github.com/spowers42/pyinit/internal/preflight"
 	"github.com/spowers42/pyinit/internal/scaffold"
@@ -14,6 +16,15 @@ import (
 var version = "dev"
 
 func main() {
+	showVersion := flag.Bool("version", false, "print the version and exit")
+	flag.Parse()
+
+	version = resolveVersion(version, debug.ReadBuildInfo)
+	if *showVersion {
+		fmt.Printf("pyinit %s\n", version)
+		return
+	}
+
 	fmt.Printf("pyinit %s — bootstrap a new Python project\n", version)
 	fmt.Println()
 
