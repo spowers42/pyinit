@@ -35,6 +35,7 @@ type resolving struct {
 	paths map[string]string
 }
 
+// Run executes name with args in dir via next, substituting name's mapped path if it has one.
 func (r resolving) Run(dir, name string, args ...string) error {
 	if p, ok := r.paths[name]; ok {
 		name = p

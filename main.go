@@ -17,7 +17,7 @@ func main() {
 	fmt.Printf("pyinit %s — bootstrap a new Python project\n", version)
 	fmt.Println()
 
-	run, err := preflight.Check(preflight.RealEnv{})
+	toolRunner, err := preflight.Check(preflight.RealEnv{})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -31,7 +31,7 @@ func main() {
 
 	fmt.Printf("\nCreating project %q in %s...\n", cfg.ProjectName, cfg.OutputDir)
 
-	if err := scaffold.Run(cfg, run); err != nil {
+	if err := scaffold.Run(cfg, toolRunner); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}

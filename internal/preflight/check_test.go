@@ -31,11 +31,16 @@ func (f *fakeEnv) Confirm(title string) (bool, error) {
 	return f.confirm, nil
 }
 
+// usrBin is where the fake env puts tools that are on PATH.
+func usrBin(name string) Location {
+	return Location{Path: "/usr/bin/" + name, OnPath: true}
+}
+
 // newEnv returns a fake env where each named tool is on PATH in /usr/bin.
 func newEnv(goos string, onPath ...string) *fakeEnv {
 	e := &fakeEnv{goos: goos, located: map[string]Location{}, confirm: true}
 	for _, p := range onPath {
-		e.located[p] = Location{Path: "/usr/bin/" + p, OnPath: true}
+		e.located[p] = usrBin(p)
 	}
 	return e
 }
@@ -44,7 +49,7 @@ func newEnv(goos string, onPath ...string) *fakeEnv {
 func (f *fakeEnv) installsOntoPath() {
 	f.run.OnRun = func(runner.Call) error {
 		for _, t := range required {
-			f.located[t.name] = Location{Path: "/usr/bin/" + t.name, OnPath: true}
+			f.located[t.name] = usrBin(t.name)
 		}
 		return nil
 	}
@@ -120,9 +125,7 @@ func TestCheckOffPathToolSucceedsWithWarning(t *testing.T) {
 	// Already installed off PATH: no install prompt, nothing run.
 	assertPrompts(t, e)
 	assertCalls(t, e)
-	if !strings.Contains(e.out.String(), "/home/u/.local/bin") || !strings.Contains(e.out.String(), "PATH") {
-		t.Fatalf("warning naming /home/u/.local/bin missing from %q", e.out.String())
-	}
+	assertOutputContains(t, e, "/home/u/.local/bin", "PATH")
 	assertResolves(t, e, r, "uv", "/home/u/.local/bin/uv")
 }
 
@@ -135,14 +138,10 @@ func TestCheckDecline(t *testing.T) {
 	}
 	assertPrompts(t, e, installPromptSudo)
 	assertCalls(t, e)
-	for _, link := range []string{
+	assertOutputContains(t, e,
 		"uv: https://docs.astral.sh/uv/getting-started/installation/",
 		"task: https://taskfile.dev/installation/",
-	} {
-		if !strings.Contains(e.out.String(), link) {
-			t.Errorf("docs link %q missing from %q", link, e.out.String())
-		}
-	}
+	)
 }
 
 func TestCheckBrewInstall(t *testing.T) {
@@ -183,9 +182,7 @@ func TestCheckScriptInstallSudoOnlyForTask(t *testing.T) {
 		"sh -c curl -LsSf https://astral.sh/uv/install.sh | sh",
 		`sudo sh -c sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin`,
 	)
-	if !strings.Contains(e.out.String(), "Installing these tools requires sudo access.") {
-		t.Fatalf("sudo warning missing from %q", e.out.String())
-	}
+	assertOutputContains(t, e, "Installing these tools requires sudo access.")
 	assertResolves(t, e, r, "task", "/usr/bin/task")
 }
 
@@ -221,9 +218,7 @@ func TestCheckTaskMissingDarwinWithoutBrewUsesSudo(t *testing.T) {
 	}
 	assertPrompts(t, e, installPromptSudo)
 	assertCalls(t, e, `sudo sh -c sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin`)
-	if !strings.Contains(e.out.String(), "Installing these tools requires sudo access.") {
-		t.Fatalf("sudo warning missing from %q", e.out.String())
-	}
+	assertOutputContains(t, e, "Installing these tools requires sudo access.")
 }
 
 func TestCheckInstallFailureWrapped(t *testing.T) {
@@ -256,8 +251,6 @@ func TestCheckRecheckFindsOffPathInstall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(e.out.String(), "/home/u/.local/bin") {
-		t.Fatalf("warning naming /home/u/.local/bin missing from %q", e.out.String())
-	}
+	assertOutputContains(t, e, "/home/u/.local/bin")
 	assertResolves(t, e, r, "uv", "/home/u/.local/bin/uv")
 }

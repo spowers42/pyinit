@@ -98,7 +98,8 @@ func TestRealEnvLocatePrefersPath(t *testing.T) {
 func TestRealEnvLocateNotFound(t *testing.T) {
 	isolate(t)
 
-	if loc, ok := (RealEnv{}).Locate(testTool); ok {
+	loc, ok := RealEnv{}.Locate(testTool)
+	if ok {
 		t.Fatalf("Locate = %+v, want not found", loc)
 	}
 }
