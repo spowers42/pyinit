@@ -11,30 +11,31 @@ import (
 )
 
 type fakeEnv struct {
-	onPath  map[string]bool
+	located map[string]Location
 	goos    string
 	confirm bool
-	files   map[string]bool
 	run     runner.Fake
 	out     bytes.Buffer
 	prompts []string
 }
 
-func (f *fakeEnv) LookPath(name string) bool   { return f.onPath[name] }
-func (f *fakeEnv) OS() string                  { return f.goos }
-func (f *fakeEnv) HomeDir() string             { return "/home/test" }
-func (f *fakeEnv) FileExists(path string) bool { return f.files[path] }
-func (f *fakeEnv) Runner() runner.Runner       { return &f.run }
-func (f *fakeEnv) Out() io.Writer              { return &f.out }
+func (f *fakeEnv) Locate(name string) (Location, bool) {
+	loc, ok := f.located[name]
+	return loc, ok
+}
+func (f *fakeEnv) OS() string            { return f.goos }
+func (f *fakeEnv) Runner() runner.Runner { return &f.run }
+func (f *fakeEnv) Out() io.Writer        { return &f.out }
 func (f *fakeEnv) Confirm(title string) (bool, error) {
 	f.prompts = append(f.prompts, title)
 	return f.confirm, nil
 }
 
+// newEnv returns a fake env where each named tool is on PATH in /usr/bin.
 func newEnv(goos string, onPath ...string) *fakeEnv {
-	e := &fakeEnv{goos: goos, onPath: map[string]bool{}, files: map[string]bool{}, confirm: true}
+	e := &fakeEnv{goos: goos, located: map[string]Location{}, confirm: true}
 	for _, p := range onPath {
-		e.onPath[p] = true
+		e.located[p] = Location{Path: "/usr/bin/" + p, OnPath: true}
 	}
 	return e
 }
@@ -43,7 +44,7 @@ func newEnv(goos string, onPath ...string) *fakeEnv {
 func (f *fakeEnv) installsOntoPath() {
 	f.run.OnRun = func(runner.Call) error {
 		for _, t := range required {
-			f.onPath[t.name] = true
+			f.located[t.name] = Location{Path: "/usr/bin/" + t.name, OnPath: true}
 		}
 		return nil
 	}
@@ -67,9 +68,28 @@ func assertCalls(t *testing.T, e *fakeEnv, want ...string) {
 	}
 }
 
+// assertResolves runs name through r and checks the env's Fake saw it as path.
+func assertResolves(t *testing.T, e *fakeEnv, r runner.Runner, name, path string) {
+	t.Helper()
+	if r == nil {
+		t.Fatal("Check returned nil runner")
+	}
+	before := len(e.run.Calls)
+	if err := r.Run("/proj", name, "--version"); err != nil {
+		t.Fatal(err)
+	}
+	if len(e.run.Calls) != before+1 {
+		t.Fatalf("runner made %d calls, want 1", len(e.run.Calls)-before)
+	}
+	if got := e.run.Calls[before].Name; got != path {
+		t.Fatalf("%s resolved to %q, want %q", name, got, path)
+	}
+}
+
 func TestCheckAllPresent(t *testing.T) {
 	e := newEnv("linux", "uv", "task")
-	if err := Check(e); err != nil {
+	r, err := Check(e)
+	if err != nil {
 		t.Fatal(err)
 	}
 	assertPrompts(t, e)
@@ -77,12 +97,30 @@ func TestCheckAllPresent(t *testing.T) {
 	if e.out.Len() != 0 {
 		t.Fatalf("unexpected output: %q", e.out.String())
 	}
+	assertResolves(t, e, r, "uv", "/usr/bin/uv")
+	assertResolves(t, e, r, "task", "/usr/bin/task")
+}
+
+func TestCheckOffPathToolSucceedsWithWarning(t *testing.T) {
+	e := newEnv("linux", "task")
+	e.located["uv"] = Location{Path: "/home/u/.local/bin/uv", OnPath: false}
+	r, err := Check(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Already installed off PATH: no install prompt, nothing run.
+	assertPrompts(t, e)
+	assertCalls(t, e)
+	if !strings.Contains(e.out.String(), "/home/u/.local/bin") || !strings.Contains(e.out.String(), "PATH") {
+		t.Fatalf("warning naming /home/u/.local/bin missing from %q", e.out.String())
+	}
+	assertResolves(t, e, r, "uv", "/home/u/.local/bin/uv")
 }
 
 func TestCheckDecline(t *testing.T) {
 	e := newEnv("linux")
 	e.confirm = false
-	err := Check(e)
+	_, err := Check(e)
 	if !errors.Is(err, ErrNotInstalled) {
 		t.Fatalf("err = %v", err)
 	}
@@ -101,7 +139,8 @@ func TestCheckDecline(t *testing.T) {
 func TestCheckBrewInstall(t *testing.T) {
 	e := newEnv("darwin", "brew")
 	e.installsOntoPath()
-	if err := Check(e); err != nil {
+	r, err := Check(e)
+	if err != nil {
 		t.Fatal(err)
 	}
 	assertPrompts(t, e, installPrompt)
@@ -109,72 +148,85 @@ func TestCheckBrewInstall(t *testing.T) {
 	if strings.Contains(e.out.String(), "sudo") {
 		t.Fatal("brew path must not mention sudo")
 	}
+	assertResolves(t, e, r, "uv", "/usr/bin/uv")
 }
 
-func TestCheckSudoInstall(t *testing.T) {
+func TestCheckScriptInstallSudoOnlyForTask(t *testing.T) {
 	e := newEnv("linux")
 	e.installsOntoPath()
-	if err := Check(e); err != nil {
+	r, err := Check(e)
+	if err != nil {
 		t.Fatal(err)
 	}
 	assertPrompts(t, e, installPromptSudo)
 	assertCalls(t, e,
-		"sudo sh -c curl -LsSf https://astral.sh/uv/install.sh | sh",
+		"sh -c curl -LsSf https://astral.sh/uv/install.sh | sh",
 		`sudo sh -c sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin`,
 	)
 	if !strings.Contains(e.out.String(), "Installing these tools requires sudo access.") {
 		t.Fatalf("sudo warning missing from %q", e.out.String())
 	}
+	assertResolves(t, e, r, "task", "/usr/bin/task")
 }
 
-func TestCheckDarwinWithoutBrewUsesSudo(t *testing.T) {
-	e := newEnv("darwin", "task")
+func TestCheckOnlyUVMissingLinuxNoSudo(t *testing.T) {
+	e := newEnv("linux", "task")
 	e.installsOntoPath()
-	if err := Check(e); err != nil {
+	if _, err := Check(e); err != nil {
+		t.Fatal(err)
+	}
+	assertPrompts(t, e, installPrompt)
+	assertCalls(t, e, "sh -c curl -LsSf https://astral.sh/uv/install.sh | sh")
+	if strings.Contains(e.out.String(), "sudo") {
+		t.Fatalf("uv-only install must not mention sudo: %q", e.out.String())
+	}
+}
+
+func TestCheckTaskMissingDarwinWithoutBrewUsesSudo(t *testing.T) {
+	e := newEnv("darwin", "uv")
+	e.installsOntoPath()
+	if _, err := Check(e); err != nil {
 		t.Fatal(err)
 	}
 	assertPrompts(t, e, installPromptSudo)
-	assertCalls(t, e, "sudo sh -c curl -LsSf https://astral.sh/uv/install.sh | sh")
+	assertCalls(t, e, `sudo sh -c sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin`)
+	if !strings.Contains(e.out.String(), "Installing these tools requires sudo access.") {
+		t.Fatalf("sudo warning missing from %q", e.out.String())
+	}
 }
 
 func TestCheckInstallFailureWrapped(t *testing.T) {
 	e := newEnv("linux", "task")
 	boom := errors.New("boom")
 	e.run.OnRun = func(runner.Call) error { return boom }
-	err := Check(e)
+	_, err := Check(e)
 	if !errors.Is(err, boom) || !strings.Contains(err.Error(), "failed to install uv") {
 		t.Fatalf("err = %v", err)
 	}
 }
 
-func TestCheckRecheckNotOnPath(t *testing.T) {
+func TestCheckRecheckNotFound(t *testing.T) {
 	e := newEnv("linux", "task")
-	err := Check(e)
-	if err == nil || !strings.Contains(err.Error(), "uv was installed but is not on PATH") {
+	_, err := Check(e)
+	if err == nil || !strings.Contains(err.Error(), "uv was installed but could not be found") {
 		t.Fatalf("err = %v", err)
 	}
-	assertPrompts(t, e, installPromptSudo)
-	assertCalls(t, e, "sudo sh -c curl -LsSf https://astral.sh/uv/install.sh | sh")
+	assertPrompts(t, e, installPrompt)
+	assertCalls(t, e, "sh -c curl -LsSf https://astral.sh/uv/install.sh | sh")
 }
 
-func TestCheckRecheckCommonPathsFallback(t *testing.T) {
+func TestCheckRecheckFindsOffPathInstall(t *testing.T) {
 	e := newEnv("linux", "task")
-	e.files["/usr/local/bin/uv"] = true
-	if err := Check(e); err != nil {
+	e.run.OnRun = func(runner.Call) error {
+		e.located["uv"] = Location{Path: "/home/u/.local/bin/uv", OnPath: false}
+		return nil
+	}
+	r, err := Check(e)
+	if err != nil {
 		t.Fatal(err)
 	}
-	assertPrompts(t, e, installPromptSudo)
-	assertCalls(t, e, "sudo sh -c curl -LsSf https://astral.sh/uv/install.sh | sh")
-}
-
-func TestCheckRecheckHomePathsFallback(t *testing.T) {
-	for _, path := range []string{"/home/test/.cargo/bin/uv", "/home/test/.local/bin/uv"} {
-		t.Run(path, func(t *testing.T) {
-			e := newEnv("linux", "task")
-			e.files[path] = true
-			if err := Check(e); err != nil {
-				t.Fatal(err)
-			}
-		})
+	if !strings.Contains(e.out.String(), "/home/u/.local/bin") {
+		t.Fatalf("warning naming /home/u/.local/bin missing from %q", e.out.String())
 	}
+	assertResolves(t, e, r, "uv", "/home/u/.local/bin/uv")
 }
