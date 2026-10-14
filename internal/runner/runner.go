@@ -24,6 +24,25 @@ func (Exec) Run(dir, name string, args ...string) error {
 	return cmd.Run()
 }
 
+// Resolving returns a Runner that runs each command named in paths from the
+// mapped path instead, delegating to next. Names not in paths pass through unchanged.
+func Resolving(next Runner, paths map[string]string) Runner {
+	return resolving{next: next, paths: paths}
+}
+
+type resolving struct {
+	next  Runner
+	paths map[string]string
+}
+
+// Run executes name with args in dir via next, substituting name's mapped path if it has one.
+func (r resolving) Run(dir, name string, args ...string) error {
+	if p, ok := r.paths[name]; ok {
+		name = p
+	}
+	return r.next.Run(dir, name, args...)
+}
+
 // Call records a single invocation made through a Fake.
 type Call struct {
 	Dir  string

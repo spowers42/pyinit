@@ -14,13 +14,13 @@ Go binary path: `/usr/local/go/bin/go` (not on PATH by default in this environme
 
 The tool runs in four sequential phases defined in `main.go`:
 
-1. **`internal/preflight`** — checks that `uv` and `task` are on PATH; if not, offers a `huh` confirm prompt and installs via Homebrew (macOS) or official curl scripts under `sudo` as fallback. `preflight.Check(env)` takes a `preflight.Env` (the environment seam: PATH lookup, OS, confirm prompt, file existence, home directory, `runner.Runner`, output writer): `preflight.RealEnv{}` in production, a fake env wrapping `runner.Fake` in tests (`go test ./internal/preflight`).
+1. **`internal/preflight`** — finds a Location (see `CONTEXT.md`) for each required tool (`uv`, `task`): on PATH first, then common dirs (`/usr/local/bin`, `/opt/homebrew/bin`, `~/.cargo/bin`, `~/.local/bin`, `$XDG_BIN_HOME`), warning when a tool is off PATH. Missing tools get a `huh` confirm prompt and are installed via Homebrew (macOS) or official curl scripts as fallback; only `task`'s script runs under `sudo` (uv's installer is per-user). `preflight.Check(env)` takes a `preflight.Env` (the environment seam: `Locate`, OS, confirm prompt, `runner.Runner`, output writer) and returns a resolving runner (`runner.Resolving`) that runs each required tool from its absolute path. `preflight.RealEnv{}` in production, a fake env wrapping `runner.Fake` in tests (`go test ./internal/preflight`).
 
 2. **`internal/tui`** — renders a three-group `charmbracelet/huh` form that collects raw `config.Input` values. It only builds the form; field validation is delegated to `internal/config`.
 
 3. **`internal/config`** — `config.New(Input)` validates the raw input and returns a `ProjectConfig`, or an error. It owns project-name and Python-version validation, and derives `PackageName` (hyphens → underscores), `PythonVersionTag` (e.g. `"312"`) and the resolved `OutputDir` (empty → home, `~` expanded, made absolute). It is the unit-test seam: `go test ./internal/config`.
 
-4. **`internal/scaffold`** — creates the project on disk from a `config.ProjectConfig`. `scaffold.Run(cfg, runner)` takes an `internal/runner.Runner` (the process seam): `runner.Exec{}` in production, `runner.Fake` in tests (`go test ./internal/scaffold`). Sequence: `mkdir` → `uv init` → move `main.py` into `src/<package>/` → write `__init__.py` / `tests/` / `docs/` → render four Go templates (overwriting uv's minimal `pyproject.toml`) → `uv venv`.
+4. **`internal/scaffold`** — creates the project on disk from a `config.ProjectConfig`. `scaffold.Run(cfg, runner)` takes an `internal/runner.Runner` (the process seam): in production, the resolving runner returned by `preflight.Check`; `runner.Fake` in tests (`go test ./internal/scaffold`). Every command scaffold runs must be in `preflight.ToolNames()` (enforced by a coverage test). Sequence: `mkdir` → `uv init` → move `main.py` into `src/<package>/` → write `__init__.py` / `tests/` / `docs/` → render four Go templates (overwriting uv's minimal `pyproject.toml`) → `uv venv`.
 
 ## Templates
 
