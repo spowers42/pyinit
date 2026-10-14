@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 
 	"github.com/spowers42/pyinit/internal/preflight"
-	"github.com/spowers42/pyinit/internal/runner"
 	"github.com/spowers42/pyinit/internal/scaffold"
 	"github.com/spowers42/pyinit/internal/tui"
 )
@@ -18,7 +17,8 @@ func main() {
 	fmt.Printf("pyinit %s — bootstrap a new Python project\n", version)
 	fmt.Println()
 
-	if err := preflight.Check(preflight.RealEnv{}); err != nil {
+	run, err := preflight.Check(preflight.RealEnv{})
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
@@ -31,7 +31,7 @@ func main() {
 
 	fmt.Printf("\nCreating project %q in %s...\n", cfg.ProjectName, cfg.OutputDir)
 
-	if err := scaffold.Run(cfg, runner.Exec{}); err != nil {
+	if err := scaffold.Run(cfg, run); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
